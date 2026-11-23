@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spikes to Cursor</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="An interactive lesson on neural signal processing for brain-computer interfaces: filtering, spike detection, spike sorting, decoding and closed-loop control, all simulated in the browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,500..800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- Left rail: the lesson drawn as the BCI signal chain -->
+  <aside class="rail" aria-label="Lesson stages">
+    <div class="rail-inner">
+      <a class="brand" href="#bandwidth">
+        <svg class="brand-mark" viewBox="0 0 40 24" aria-hidden="true"><path d="M1 12 H12 L14 10 L16.5 22 L19.5 2 L22 15 L24 12 H39" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/></svg>
+        <span class="brand-name">Spikes to Cursor</span>
+      </a>
+      <p class="brand-sub">How a brain implant turns neuron activity into a moving cursor</p>
+
+      <ol class="chain" id="chain">
+        <li><a href="#bandwidth" data-section="bandwidth"><span class="node" aria-hidden="true"></span><span class="stage-num">00</span><span class="stage-text"><span class="stage-name">The bandwidth problem</span><span class="stage-time">0–5 min</span></span></a></li>
+        <li><a href="#signal" data-section="signal"><span class="node" aria-hidden="true"></span><span class="stage-num">01</span><span class="stage-text"><span class="stage-name">Raw signal &amp; filtering</span><span class="stage-time">5–12 min</span></span></a></li>
+        <li><a href="#sorting" data-section="sorting"><span class="node" aria-hidden="true"></span><span class="stage-num">02</span><span class="stage-text"><span class="stage-name">Detection &amp; sorting</span><span class="stage-time">12–20 min</span></span></a></li>
+        <li><a href="#decoding" data-section="decoding"><span class="node" aria-hidden="true"></span><span class="stage-num">03</span><span class="stage-text"><span class="stage-name">Decoding intent</span><span class="stage-time">20–30 min</span></span></a></li>
+        <li><a href="#webgrid" data-section="webgrid"><span class="node" aria-hidden="true"></span><span class="stage-num">04</span><span class="stage-text"><span class="stage-name">Webgrid challenge</span><span class="stage-time">30–38 min</span></span></a></li>
+        <li><a href="#wrapup" data-section="wrapup"><span class="node" aria-hidden="true"></span><span class="stage-num">05</span><span class="stage-text"><span class="stage-name">What's still hard</span><span class="stage-time">38–40 min</span></span></a></li>
+      </ol>
+
+      <div class="clock" aria-label="Lesson clock">
+        <div class="clock-row">
+          <span class="clock-label">Lesson clock</span>
+          <span class="clock-time"><span id="clock-time">00:00</span><span class="clock-total"> / 40:00</span></span>
+        </div>
+        <div class="clock-bar" aria-hidden="true"><span id="clock-fill"></span></div>
+        <div class="clock-row">
+          <button class="btn btn-small" id="clock-toggle" type="button">Start</button>
+          <button class="btn btn-small btn-quiet" id="clock-reset" type="button">Reset</button>
+        </div>
+      </div>
+
+      <div class="rail-foot">
+        <button class="btn btn-small btn-quiet" id="theme-toggle" type="button">Theme: system</button>
+        <p class="kbd-hint"><kbd>←</kbd> <kbd>→</kbd> or a presentation clicker moves between stages. Dotted words show a definition when clicked.</p>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+
+    <!-- ============ STAGE 0: BANDWIDTH ============ -->
+    <section class="lesson" id="sec-bandwidth" data-section="bandwidth" aria-labelledby="h-bandwidth">
+      <header class="lesson-head">
+        <p class="eyebrow"><span class="eyebrow-num">00</span> The hook</p>
+        <h1 id="h-bandwidth">1,024 electrodes. One tiny radio.</h1>
+        <p class="lede">An implant like Neuralink's records 1,024 channels, 20,000 times a second each. Its wireless link carries about one megabit per second. Before a computer can use the data, the implant has to throw away more than 99% of it.</p>
+      </header>
+
+      <div class="plain">
+        <p class="plain-label">In plain words</p>
+        <p>Your brain has about 86 billion <button class="term" data-term="neuron">neurons</button>. They talk to each other with tiny electrical pulses called <button class="term" data-term="spike">spikes</button>, each lasting about a thousandth of a second. A <button class="term" data-term="bci">brain–computer interface</button> places small <button class="term" data-term="electrode">electrodes</button> next to neurons, listens for those spikes, and turns them into commands, such as moving a cursor for someone who is paralyzed.</p>
+        <p class="plain-analogy"><strong>Think of it like</strong> 1,024 microphones in a packed stadium, each catching a few nearby voices over the roar of the crowd. The implant has to work out what matters and send only that, through a link that carries about 1/200th of what the microphones record.</p>
+      </div>
+
+      <div class="bench">
+        <div class="instrument">
+          <figure class="panel">
+            <figcaption class="panel-head">
+              <span class="panel-title">Electrode array, live</span>
+              <span class="panel-meta" id="array-meta">64 threads × 16 electrodes</span>
+            </figcaption>
+            <div class="plot plot-array"><canvas id="array-canvas" role="img" aria-label="Grid of electrode channels flashing when spikes occur"></canvas></div>
+          </figure>
+          <figure class="panel">
+            <figcaption class="panel-head">
+              <span class="panel-title">What could we send?</span>
+              <span class="panel-meta">bits per second, log scale</span>
+            </figcaption>
+            <div class="plot plot-bars"><canvas id="bw-bars" role="img" aria-label="Data rate of four transmission formats compared with the radio budget"></canvas></div>
+          </figure>
+        </div>
+
+        <div class="controls">
+          <div class="readouts">
+            <div class="readout"><span class="readout-label">Raw data rate</span><span class="readout-value" id="bw-raw">204.8 Mb/s</span></div>
+            <div class="readout"><span class="readout-label">Radio budget</span><span class="readout-value" id="bw-radio">1 Mb/s</span></div>
+            <div class="readout readout-accent"><span class="readout-label">Shrink data by</span><span class="readout-value" id="bw-ratio">205×</span></div>
+          </div>
+          <fieldset class="group">
+            <legend>Implant</legend>
+            <div class="field"><label for="bw-ch">Channels (electrodes)</label><output for="bw-ch"></output><input type="range" id="bw-ch" min="16" max="4096" step="16" value="1024"></div>
+            <div class="field"><label for="bw-fs">Measurements per second</label><output for="bw-fs"></output><input type="range" id="bw-fs" min="5" max="40" step="1" value="20"></div>
+            <div class="field"><label for="bw-bits">Bits per measurement</label><output for="bw-bits"></output><input type="range" id="bw-bits" min="8" max="16" step="1" value="10"></div>
+            <div class="field"><label for="bw-radio-in">Radio budget</label><output for="bw-radio-in"></output><input type="range" id="bw-radio-in" min="0" max="1000" step="1" value="500"></div>
+          </fieldset>
+          <fieldset class="group">
+            <legend>Neural activity</legend>
+            <div class="field"><label for="bw-rate">Spikes per channel per second</label><output for="bw-rate"></output><input type="range" id="bw-rate" min="1" max="80" step="1" value="20"></div>
+            <div class="field"><label for="bw-bin">Counting window</label><output for="bw-bin"></output><input type="range" id="bw-bin" min="5" max="50" step="5" value="20"></div>
+          </fieldset>
+        </div>
+      </div>
+
+      <div class="notes">
+        <article class="note">
+          <h2>What you're seeing</h2>
+          <p>Each square is one <button class="term" data-term="channel">channel</button>, laid out like the N1 implant: 64 flexible threads with 16 electrodes each. A flash means that channel just recorded a spike. The bars compare four ways to package the same activity for the radio. Red bars don't fit.</p>
+          <ul class="formats">
+            <li><strong>Raw voltage:</strong> send every measurement.</li>
+            <li><strong>Spike waveforms:</strong> send only the shape of each spike.</li>
+            <li><strong>Spike events:</strong> send only "channel 412 fired at time t".</li>
+            <li><strong>Binned counts:</strong> send how many spikes each channel had every 20 ms.</li>
+          </ul>
+        </article>
+        <article class="note">
+          <h2>Try this</h2>
+          <ol>
+            <li>Find the most detailed format that still fits under the radio line.</li>
+            <li>Raise the channel count to 4,096. Which formats still fit?</li>
+            <li>Raise the firing rate. When does sending counts beat sending each spike?</li>
+          </ol>
+        </article>
+        <article class="note">
+          <h2>The math <span class="optional">optional</span></h2>
+          <p class="eq">raw = channels × <var>f</var><sub>s</sub> × bits</p>
+          <p class="eq">events = channels × rate × (⌈log<sub>2</sub> channels⌉ + 10)</p>
+          <p class="eq">counts = channels × (1000 / bin<sub>ms</sub>) × 4</p>
+          <p class="note-small"><var>f</var><sub>s</sub> is the <button class="term" data-term="sample-rate">sample rate</button>. An event is a channel ID plus a 10-bit timestamp. Counts use 4 <button class="term" data-term="bits">bits</button>, enough for 0–15 spikes per bin. Shrinking data like this is called <button class="term" data-term="compression">compression</button>.</p>
+        </article>
+      </div>
+      <p class="source">Figures from the <a href="https://content.neuralink.com/compression-challenge/README.html" target="_blank" rel="noopener">Neuralink Compression Challenge</a>: 1,024 electrodes, 20 kHz, 10-bit samples, ~1 Mb/s radio, under 10 mW total power.</p>
+    </section>
+
+    <!-- ============ STAGE 1: SIGNAL & FILTERING ============ -->
+    <section class="lesson" id="sec-signal" data-section="signal" aria-labelledby="h-signal" hidden>
+      <header class="lesson-head">
+        <p class="eyebrow"><span class="eyebrow-num">01</span> Raw signal &amp; filtering</p>
+        <h1 id="h-signal">Where are the spikes?</h1>
+        <p class="lede">One electrode hears everything nearby. A filter separates the fast spikes from the slow background.</p>
+      </header>
+
+      <div class="plain">
+        <p class="plain-label">In plain words</p>
+        <p>An electrode doesn't hear spikes cleanly. It records a mix: slow waves from thousands of distant neurons (the <button class="term" data-term="lfp">local field potential</button>), electrical hum from the building's wiring (<button class="term" data-term="line-noise">line noise</button>), and random hiss. Spikes are short, sharp events, so they're made of fast wiggles, while most of the background is slow. A <button class="term" data-term="filter">filter</button> keeps the wiggle speeds (<button class="term" data-term="frequency">frequencies</button>) we want and removes the rest.</p>
+        <p class="plain-analogy"><strong>Think of it like</strong> the bass and treble knobs on a stereo. Turn the bass all the way down and the slow rumble disappears, leaving the sharp sounds.</p>
+      </div>
+
+      <div class="bench">
+        <div class="instrument">
+          <figure class="panel">
+            <figcaption class="panel-head">
+              <span class="panel-title">Raw voltage</span>
+              <span class="panel-meta">what the electrode records</span>
+            </figcaption>
+            <div class="plot plot-trace"><canvas id="sig-raw" role="img" aria-label="Scrolling raw voltage trace"></canvas></div>
+          </figure>
+          <figure class="panel">
+            <figcaption class="panel-head">
+              <span class="panel-title">After the filter</span>
+              <span class="panel-meta" id="sig-filt-meta">300 Hz – 6 kHz, causal</span>
+            </figcaption>
+            <div class="plot plot-trace"><canvas id="sig-filt" role="img" aria-label="Scrolling band-pass filtered voltage trace with true spike times marked"></canvas></div>
+          </figure>
+          <div class="panel-row">
+            <figure class="panel">
+              <figcaption class="panel-head">
+                <span class="panel-title">Which frequencies are in the signal?</span>
+              </figcaption>
+              <div class="plot plot-square"><canvas id="sig-psd" role="img" aria-label="Power spectrum of raw and filtered signals with the filter response"></canvas></div>
+            </figure>
+            <figure class="panel">
+              <figcaption class="panel-head">
+                <span class="panel-title">One spike, before and after</span>
+                <div class="seg seg-small" id="sig-unit" aria-label="Neuron"><button data-value="0">A</button><button data-value="1">B</button><button data-value="2">C</button></div>
+              </figcaption>
+              <div class="plot plot-square"><canvas id="sig-wave" role="img" aria-label="A neuron's spike waveform before and after filtering"></canvas></div>
+            </figure>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div class="transport">
+            <button class="btn btn-play" id="sig-play" type="button" aria-pressed="true">Pause</button>
+            <div class="seg" id="sig-speed" aria-label="Playback speed"><button data-value="0.1">0.1×</button><button data-value="0.25">0.25×</button><button data-value="1">1×</button></div>
+          </div>
+          <fieldset class="group">
+            <legend>Band-pass filter</legend>
+            <div class="field"><label for="sig-low">Remove slower than</label><output for="sig-low"></output><input type="range" id="sig-low" min="0" max="1000" step="1"></div>
+            <div class="field"><label for="sig-high">Remove faster than</label><output for="sig-high"></output><input type="range" id="sig-high" min="0" max="1000" step="1"></div>
+            <div class="field"><span class="field-label" id="lbl-order">Filter sharpness (order)</span><div class="seg" id="sig-order" aria-labelledby="lbl-order"><button data-value="2">Gentle · 2nd</button><button data-value="4">Sharp · 4th</button></div></div>
+            <div class="field"><span class="field-label" id="lbl-phase">Filter type</span><div class="seg" id="sig-phase" aria-labelledby="lbl-phase"><button data-value="causal">Real-time · implant</button><button data-value="zerophase">Offline · lab</button></div></div>
+          </fieldset>
+          <fieldset class="group">
+            <legend>Recording</legend>
+            <div class="field"><label for="sig-noise">Background noise</label><output for="sig-noise"></output><input type="range" id="sig-noise" min="0.5" max="3" step="0.1" value="1"></div>
+            <label class="switch"><input type="checkbox" id="sig-line"><span class="switch-track" aria-hidden="true"></span><span>60 Hz hum from wiring</span></label>
+            <label class="switch"><input type="checkbox" id="sig-truth"><span class="switch-track" aria-hidden="true"></span><span>Mark when each neuron fired</span></label>
+          </fieldset>
+          <ul class="legend" aria-label="Neuron colors">
+            <li><span class="swatch" style="background: var(--u1)"></span>Neuron A</li>
+            <li><span class="swatch" style="background: var(--u2)"></span>Neuron B</li>
+            <li><span class="swatch" style="background: var(--u3)"></span>Neuron C</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="notes">
+        <article class="note">
+          <h2>What you're seeing</h2>
+          <p>Top: the raw voltage, dominated by slow waves. Middle: the same signal after a <button class="term" data-term="band-pass">band-pass filter</button>. Sharp downward spikes now stand out, and the triangles mark which neuron really fired. Bottom left: the <button class="term" data-term="spectrum">power spectrum</button>, showing slow waves on the left and spike energy on the right. The shaded band is what the filter keeps.</p>
+        </article>
+        <article class="note">
+          <h2>Try this</h2>
+          <ol>
+            <li>Drag "Remove slower than" down to 10 Hz. The slow waves come back and the spikes ride on top of them.</li>
+            <li>Push it up to 1.5 kHz. The noise drops, but the spike shrinks in the bottom-right panel.</li>
+            <li>Switch to Sharp and compare Real-time with Offline. An implant can only filter in real time. See the cost in Stage 2.</li>
+          </ol>
+        </article>
+        <article class="note">
+          <h2>The math <span class="optional">optional</span></h2>
+          <p class="eq">|<var>H</var>(<var>f</var>)|² = 1 / (1 + (<var>f</var>/<var>f</var><sub>c</sub>)<sup>2<var>N</var></sup>)</p>
+          <p class="eq"><var>y</var>[<var>n</var>] = <var>b</var><sub>0</sub><var>x</var>[<var>n</var>] + <var>b</var><sub>1</sub><var>x</var>[<var>n</var>−1] + <var>b</var><sub>2</sub><var>x</var>[<var>n</var>−2] − <var>a</var><sub>1</sub><var>y</var>[<var>n</var>−1] − <var>a</var><sub>2</sub><var>y</var>[<var>n</var>−2]</p>
+          <p class="note-small">A Butterworth filter of order <var>N</var>, built from small two-step pieces called biquads. Each output mixes the latest inputs and outputs. A <button class="term" data-term="causal">causal</button> filter only uses the past. The offline version runs the filter forward and then backward, which needs the future.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ STAGE 2: DETECTION & SORTING ============ -->
+    <section class="lesson" id="sec-sorting" data-section="sorting" aria-labelledby="h-sorting" hidden>
+      <header class="lesson-head">
+        <p class="eyebrow"><span class="eyebrow-num">02</span> Detection &amp; sorting</p>
+        <h1 id="h-sorting">Which neuron fired?</h1>
+        <p class="lede">Find every spike, then group them by shape. Because this recording is simulated, we can grade every step against the right answer.</p>
+      </header>
+
+      <div class="plain">
+        <p class="plain-label">In plain words</p>
+        <p><strong>Finding spikes:</strong> draw a line below the noise. Any dip that crosses it counts as a spike. That line is the <button class="term" data-term="threshold">threshold</button>. Put it too close to the noise and random wiggles get counted. Put it too deep and small real spikes are missed.</p>
+        <p><strong>Sorting spikes:</strong> every neuron's spike has its own <button class="term" data-term="waveform">shape</button>, depending on the cell and how far it is from the electrode. We summarize each shape as a dot on a chart (<button class="term" data-term="pca">PCA</button>), so similar shapes land close together. Then <button class="term" data-term="kmeans">k-means</button> draws the groups.</p>
+        <p class="plain-analogy"><strong>Think of it like</strong> sorting a recording of a crowded room by voice: first find every moment someone spoke, then group the moments by who sounds alike.</p>
+      </div>
+
+      <div class="stats" aria-live="polite">
+        <div class="stat"><span class="stat-label">Noise level σ</span><span class="stat-value" id="st-sigma">–</span></div>
+        <div class="stat"><span class="stat-label">Threshold</span><span class="stat-value" id="st-thr">–</span></div>
+        <div class="stat"><span class="stat-label">Spikes found</span><span class="stat-value" id="st-det">–</span></div>
+        <div class="stat"><span class="stat-label">Real spikes caught</span><span class="stat-value" id="st-recall">–</span></div>
+        <div class="stat"><span class="stat-label">Found that were real</span><span class="stat-value" id="st-prec">–</span></div>
+        <div class="stat"><span class="stat-label">Sorted correctly</span><span class="stat-value" id="st-acc">–</span></div>
+        <div class="stat"><span class="stat-label">Data per channel</span><span class="stat-value" id="st-rate">–</span></div>
+      </div>
+
+      <div class="bench">
+        <div class="instrument">
+          <figure class="panel">
+            <figcaption class="panel-head">
+              <span class="panel-title">Finding spikes</span>
+              <span class="panel-meta">drag the dashed line</span>
+            </figcaption>
+            <div class="plot plot-trace plot-drag"><canvas id="sort-trace" role="img" aria-label="Filtered trace with detection threshold and detected spikes"></canvas></div>
+          </figure>
+          <div class="panel-row">
+            <figure class="panel">
+              <figcaption class="panel-head">
+                <span class="panel-title">Every spike, overlaid</span>
+                <span class="panel-meta" id="sort-waves-meta">1.6 ms snippets</span>
+              </figcaption>
+              <div class="plot plot-square"><canvas id="sort-waves" role="img" aria-label="Overlaid spike waveforms colored by group"></canvas></div>
+            </figure>
+            <figure class="panel">
+              <figcaption class="panel-head">
+                <span class="panel-title">Each spike as a dot</span>
+                <span class="panel-meta">similar shapes land close</span>
+              </figcaption>
+              <div class="plot plot-square"><canvas id="sort-pca" role="img" aria-label="Scatter of spikes in principal component space with k-means centroids"></canvas></div>
+            </figure>
+          </div>
+        </div>
+
+        <div class="controls">
+          <fieldset class="group">
+            <legend>Finding spikes</legend>
+            <div class="field"><label for="sort-k">Threshold (× noise level)</label><output for="sort-k"></output><input type="range" id="sort-k" min="2" max="9" step="0.1"></div>
+            <div class="field"><label for="sort-pos">Position in recording</label><output for="sort-pos"></output><input type="range" id="sort-pos" min="0" max="1000" step="1" value="120"></div>
+          </fieldset>
+          <fieldset class="group">
+            <legend>Sorting spikes</legend>
+            <div class="field"><span class="field-label" id="lbl-k">How many groups (k)</span><div class="seg" id="sort-kclusters" aria-labelledby="lbl-k"><button data-value="2">2</button><button data-value="3">3</button><button data-value="4">4</button><button data-value="5">5</button></div></div>
+            <div class="field"><span class="field-label" id="lbl-color">Color spikes by</span><div class="seg" id="sort-color" aria-labelledby="lbl-color"><button data-value="cluster">Our guess</button><button data-value="truth">Right answer</button></div></div>
+            <div class="kmeans-run">
+              <button class="btn btn-primary" id="sort-run" type="button">Run k-means</button>
+              <span class="kmeans-status" id="sort-status" aria-live="polite">Best of 10 runs</span>
+            </div>
+          </fieldset>
+          <fieldset class="group">
+            <legend>Neurons on this electrode</legend>
+            <div class="seg seg-full" id="sort-scenario"><button data-value="distinct">Easy · distinct shapes</button><button data-value="lookalike">Hard · look-alikes</button></div>
+          </fieldset>
+          <ul class="legend" id="sort-legend" aria-label="Colors"></ul>
+        </div>
+      </div>
+
+      <div class="notes">
+        <article class="note">
+          <h2>What you're seeing</h2>
+          <p>Top: the filtered voltage and the threshold. Dots mark spikes we found, red rings mark real spikes we missed. Bottom left: every spike we cut out, stacked on top of each other, forming a few families. Bottom right: each spike as a single dot. The circled crosses are the group centers k-means found. "<button class="term" data-term="recall">Real spikes caught</button>" and "<button class="term" data-term="precision">Found that were real</button>" grade the detection.</p>
+        </article>
+        <article class="note">
+          <h2>Try this</h2>
+          <ol>
+            <li>Drag the threshold up toward the noise (2.5×). Lots of fake spikes get counted.</li>
+            <li>Drag it down to 7×. Neuron C, the smallest, starts to go missing.</li>
+            <li>Switch to Hard, press Run k-means, then color by Right answer. Two neurons end up in one group.</li>
+          </ol>
+        </article>
+        <article class="note">
+          <h2>The math <span class="optional">optional</span></h2>
+          <p class="eq">σ = median(|<var>x</var>|) / 0.6745 &nbsp;·&nbsp; threshold = −<var>k</var>σ</p>
+          <p class="eq">PCs = top eigenvectors of the waveform covariance</p>
+          <p class="eq">k-means minimizes Σ<sub><var>i</var></sub> ‖<var>x</var><sub><var>i</var></sub> − μ<sub><var>c</var>(<var>i</var>)</sub>‖²</p>
+          <p class="note-small">Using the median keeps big spikes from inflating the <button class="term" data-term="sigma">noise estimate</button> (Quiroga et al., 2004). Many clinical BCIs skip sorting and decode unsorted threshold crossings, which works nearly as well (Trautmann et al., 2019). Scores here use the <button class="term" data-term="ground-truth">ground truth</button>.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ STAGE 3: DECODING ============ -->
+    <section class="lesson" id="sec-decoding" data-section="decoding" aria-labelledby="h-decoding" hidden>
+      <header class="lesson-head">
+        <p class="eyebrow"><span class="eyebrow-num">03</span> Decoding intent</p>
+        <h1 id="h-decoding">Reading a movement from neurons</h1>
+        <p class="lede">Move your mouse inside the workspace. Simulated neurons fire as if you intended that movement, and a decoder rebuilds the cursor from their spikes alone.</p>
+      </header>
+
+      <div class="plain">
+        <p class="plain-label">In plain words</p>
+        <p>In the <button class="term" data-term="motor-cortex">motor cortex</button>, the part of the brain that controls movement, many neurons have a <button class="term" data-term="tuning">favorite direction</button>. One fires fastest when you intend to move right, another when you intend to move up and to the left. A single neuron is too noisy to trust, but hundreds together are reliable. A <button class="term" data-term="decoder">decoder</button> is the math that combines them into a cursor velocity.</p>
+        <p>Before it can do that, the decoder has to learn each neuron's favorite direction. That happens during <button class="term" data-term="calibration">calibration</button>: the person watches a cursor move to targets and imagines moving it.</p>
+        <p class="plain-analogy"><strong>Think of it like</strong> asking a crowd to point toward a sound. Each person is a bit off, but the average of hundreds of pointing arms is very accurate.</p>
+      </div>
+
+      <div class="bench">
+        <div class="instrument">
+          <figure class="panel">
+            <figcaption class="panel-head">
+              <span class="panel-title">Workspace</span>
+              <span class="panel-meta">move your mouse in here</span>
+            </figcaption>
+            <div class="plot plot-workspace"><canvas id="dec-work" role="img" aria-label="Workspace showing the intended cursor and the decoded cursor"></canvas></div>
+          </figure>
+          <div class="panel-row">
+            <figure class="panel">
+              <figcaption class="panel-head">
+                <span class="panel-title">The neurons voting</span>
+                <span class="panel-meta">dot = one neuron</span>
+              </figcaption>
+              <div class="plot plot-square"><canvas id="dec-compass" role="img" aria-label="Neurons arranged in a circle by preferred direction, brighter when firing"></canvas></div>
+            </figure>
+            <figure class="panel">
+              <figcaption class="panel-head">
+                <span class="panel-title">Which decoder is best?</span>
+                <span class="panel-meta">on unseen reaches</span>
+              </figcaption>
+              <div class="plot plot-square"><canvas id="dec-scores" role="img" aria-label="Bar chart of how much movement each decoder explains"></canvas></div>
+            </figure>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div class="readouts">
+            <div class="readout readout-accent"><span class="readout-label">Movement explained</span><span class="readout-value" id="dec-r2">–</span></div>
+            <div class="readout"><span class="readout-label">Live match with your mouse</span><span class="readout-value" id="dec-live">–</span></div>
+          </div>
+          <fieldset class="group">
+            <legend>Decoder</legend>
+            <div class="seg seg-stack" id="dec-decoder">
+              <button data-value="pv"><span class="opt-name">Population vector</span><span class="opt-desc">every neuron votes · instant but jittery</span></button>
+              <button data-value="linear"><span class="opt-name">Linear regression</span><span class="opt-desc">best weighted sum of spike counts</span></button>
+              <button data-value="kalman"><span class="opt-name">Kalman filter</span><span class="opt-desc">remembers your heading · smooth but lags ~0.1 s</span></button>
+            </div>
+          </fieldset>
+          <fieldset class="group">
+            <legend>Implant</legend>
+            <div class="field"><label for="dec-n">Neurons recorded</label><output for="dec-n"></output><input type="range" id="dec-n" min="16" max="192" step="16"></div>
+            <div class="field"><label for="dec-day">Days since implant</label><output for="dec-day"></output><input type="range" id="dec-day" min="0" max="30" step="1" value="0"></div>
+            <div class="btn-row">
+              <button class="btn" id="dec-recal" type="button">Recalibrate today</button>
+              <button class="btn btn-quiet" id="dec-recenter" type="button">Recenter</button>
+            </div>
+            <p class="hint" id="dec-calib">Calibrated on day 0 with 60 s of practice reaches.</p>
+          </fieldset>
+          <ul class="legend">
+            <li><span class="swatch swatch-ring-ink"></span>Your intention (mouse)</li>
+            <li><span class="swatch" style="background: var(--accent)"></span>Decoded cursor</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="notes">
+        <article class="note">
+          <h2>What you're seeing</h2>
+          <p>The ring follows your mouse: that's the intention. The solid dot is the decoded cursor, moved only by what the decoder reads from spikes. In the circle, each dot is a neuron placed at its favorite direction. Move right and the dots on the right light up. The arrow is the decoded direction. The bar chart scores each decoder by <button class="term" data-term="r2">how much of the movement it explains</button>.</p>
+        </article>
+        <article class="note">
+          <h2>Try this</h2>
+          <ol>
+            <li>Switch between the three decoders while moving in circles. Which cursor is smoothest? Which one trails behind?</li>
+            <li>Drop to 16 neurons, then raise to 192. More electrodes, better control.</li>
+            <li>Slide to day 30. The neurons <button class="term" data-term="drift">drift</button> and the decoder gets worse. Press Recalibrate today to fix it.</li>
+          </ol>
+        </article>
+        <article class="note">
+          <h2>The math <span class="optional">optional</span></h2>
+          <p class="eq">rate<sub><var>i</var></sub> = <var>b</var><sub><var>i</var></sub> + <var>m</var><sub><var>i</var></sub> (<b>v</b> · <b>p</b><sub><var>i</var></sub>)</p>
+          <p class="eq">PV: <b>v̂</b> ∝ Σ<sub><var>i</var></sub> (<var>z</var><sub><var>i</var></sub> − <var>b</var><sub><var>i</var></sub>) <var>m</var><sub><var>i</var></sub> <b>p</b><sub><var>i</var></sub></p>
+          <p class="eq">Kalman: <b>v̂</b><sub><var>t</var></sub> = <var>A</var><b>v̂</b><sub><var>t</var>−1</sub> + <var>K</var>(<b>z</b><sub><var>t</var></sub> − <var>HA</var><b>v̂</b><sub><var>t</var>−1</sub>)</p>
+          <p class="note-small">Cosine tuning (Georgopoulos et al., 1982), the <button class="term" data-term="population-vector">population vector</button>, <button class="term" data-term="linear-regression">linear regression</button>, and the <button class="term" data-term="kalman">Kalman filter</button> (Wu et al., 2003). Spike counts <var>z</var> are taken in 20 ms bins, the same "binned counts" from Stage 0.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ STAGE 4: WEBGRID ============ -->
+    <section class="lesson" id="sec-webgrid" data-section="webgrid" aria-labelledby="h-webgrid" hidden>
+      <header class="lesson-head">
+        <p class="eyebrow"><span class="eyebrow-num">04</span> Webgrid challenge</p>
+        <h1 id="h-webgrid">Click the target with your neurons</h1>
+        <p class="lede">Neuralink scores its participants with this kind of task. Thirty seconds, one target at a time, scored in bits per second.</p>
+      </header>
+
+      <div class="plain">
+        <p class="plain-label">In plain words</p>
+        <p>One square lights up. Move the cursor onto it and click. Each correct click delivers a bit of information, and wrong clicks cancel correct ones. Your score is information delivered per second: <button class="term" data-term="bps">bits per second</button>.</p>
+        <p>Here, your mouse is not moving the cursor. Your mouse movement plays the role of what a participant would intend, simulated neurons fire, and the decoder from Stage 3 moves the cursor. You can only correct mistakes by watching the screen, which is what makes it <button class="term" data-term="closed-loop">closed loop</button>. Real BCIs also decode the click from neurons; here, your real click stands in for that.</p>
+      </div>
+
+      <div class="bench">
+        <div class="instrument">
+          <figure class="panel">
+            <figcaption class="panel-head">
+              <span class="panel-title">Webgrid</span>
+              <span class="panel-meta" id="wg-meta">8 × 8 grid · 30 s</span>
+            </figcaption>
+            <div class="plot plot-game">
+              <canvas id="wg-canvas" role="img" aria-label="Grid of squares with one target and the decoded cursor"></canvas>
+              <div class="game-overlay" id="wg-overlay">
+                <p class="overlay-big" id="wg-overlay-big">Ready?</p>
+                <p class="overlay-small" id="wg-overlay-small">Type a name, then press Start. Click (or press Space) when the cursor is on the lit square.</p>
+              </div>
+            </div>
+          </figure>
+          <figure class="panel">
+            <figcaption class="panel-head">
+              <span class="panel-title">Class leaderboard</span>
+              <span class="panel-meta">saved in this browser</span>
+            </figcaption>
+            <div class="board-wrap">
+              <table class="board" id="wg-board">
+                <thead><tr><th scope="col">#</th><th scope="col">Name</th><th scope="col" class="num">Bits/s</th><th scope="col" class="num">Hits</th><th scope="col" class="num">Misses</th><th scope="col">Setup</th></tr></thead>
+                <tbody></tbody>
+              </table>
+              <p class="board-empty" id="wg-empty">No scores yet. The first volunteer sets the bar.</p>
+            </div>
+            <div class="board-foot">
+              <button class="btn btn-small btn-quiet" id="wg-clear" type="button">Clear leaderboard</button>
+              <span class="confirm" id="wg-confirm" hidden>Delete all scores? <button class="btn btn-small" id="wg-confirm-yes" type="button">Delete</button> <button class="btn btn-small btn-quiet" id="wg-confirm-no" type="button">Keep</button></span>
+            </div>
+          </figure>
+        </div>
+
+        <div class="controls">
+          <div class="readouts">
+            <div class="readout"><span class="readout-label">Time left</span><span class="readout-value" id="wg-time">30.0 s</span></div>
+            <div class="readout"><span class="readout-label">Hits / misses</span><span class="readout-value" id="wg-hits">0 / 0</span></div>
+            <div class="readout readout-accent"><span class="readout-label">Bits per second</span><span class="readout-value" id="wg-bps">0.00</span></div>
+          </div>
+          <fieldset class="group">
+            <legend>Player</legend>
+            <div class="field field-text"><label for="wg-name">Name</label><input type="text" id="wg-name" maxlength="24" autocomplete="off" placeholder="Volunteer name"></div>
+          </fieldset>
+          <fieldset class="group">
+            <legend>Round</legend>
+            <div class="field"><span class="field-label" id="lbl-mode">Cursor driven by</span><div class="seg" id="wg-mode" aria-labelledby="lbl-mode"><button data-value="bci">Neurons · BCI</button><button data-value="mouse">Mouse · direct</button></div></div>
+            <div class="field"><span class="field-label" id="lbl-grid">Grid</span><div class="seg" id="wg-grid" aria-labelledby="lbl-grid"><button data-value="6">6 × 6</button><button data-value="8">8 × 8</button><button data-value="12">12 × 12</button></div></div>
+            <button class="btn btn-primary btn-big" id="wg-start" type="button">Start round</button>
+            <p class="hint" id="wg-using">Decoder: Kalman filter · 96 neurons · day 0. Change it in Stage 3.</p>
+          </fieldset>
+        </div>
+      </div>
+
+      <div class="notes">
+        <article class="note">
+          <h2>What you're seeing</h2>
+          <p>The lit square is the target. The dot is the decoded cursor, and your real mouse pointer is hidden so you have to steer by watching it, like a participant would. Bigger grids are harder, but each correct click is worth more bits.</p>
+        </article>
+        <article class="note">
+          <h2>Try this</h2>
+          <ol>
+            <li>Play one round with the mouse, then one with neurons. How big is the gap?</li>
+            <li>Have a volunteer play with the population vector, then the Kalman filter. The Kalman filter won in Stage 3. Does it win here?</li>
+            <li>Set day 30 in Stage 3 without recalibrating, then play. Drift makes control harder.</li>
+          </ol>
+        </article>
+        <article class="note">
+          <h2>The math <span class="optional">optional</span></h2>
+          <p class="eq"><var>B</var> = log<sub>2</sub>(<var>N</var> − 1) × max(0, <var>S</var><sub>c</sub> − <var>S</var><sub>i</sub>) / <var>t</var></p>
+          <p class="note-small"><var>N</var> squares, <var>S</var><sub>c</sub> correct and <var>S</var><sub>i</sub> incorrect selections in <var>t</var> seconds: the achieved bitrate (Nuyujukian et al., 2015). Neuralink reports that its clinical trial participants have exceeded 10 bits per second on a 35 × 35 grid.</p>
+        </article>
+      </div>
+      <div class="plain plain-insight">
+        <p class="plain-label">The twist to discuss</p>
+        <p>The Kalman filter scored best in Stage 3, yet many players do better here with the simpler decoders. Its smoothing makes it trail your intention by about a tenth of a second, and when a person is steering, that delay causes overshoot. Being accurate on recorded data (offline) is not the same as being easy to control (online). Researchers fixed this by recalibrating the Kalman filter on data recorded while the person was using it, an approach called ReFIT (Gilja et al., 2012).</p>
+      </div>
+      <p class="source">Webgrid scoring is described on <a href="https://neuralink.com/webgrid" target="_blank" rel="noopener">Neuralink's Webgrid page</a>.</p>
+    </section>
+
+    <!-- ============ STAGE 5: WRAP-UP ============ -->
+    <section class="lesson" id="sec-wrapup" data-section="wrapup" aria-labelledby="h-wrapup" hidden>
+      <header class="lesson-head">
+        <p class="eyebrow"><span class="eyebrow-num">05</span> Wrap-up</p>
+        <h1 id="h-wrapup">What's still hard</h1>
+        <p class="lede">You just ran the whole chain, from a noisy voltage to a cursor you could control. Each step leaves open problems that companies and labs are working on now.</p>
+      </header>
+
+      <ol class="recap">
+        <li><span class="recap-num">00</span><strong>Record</strong><span>Far more data than a tiny radio can send, so it must shrink on the chip.</span></li>
+        <li><span class="recap-num">01</span><strong>Filter</strong><span>Keep the fast wiggles where spikes live, in real time.</span></li>
+        <li><span class="recap-num">02</span><strong>Detect &amp; sort</strong><span>A threshold finds spikes; shape tells neurons apart, when it can.</span></li>
+        <li><span class="recap-num">03</span><strong>Decode</strong><span>Many noisy neurons vote; the Kalman filter adds memory of motion.</span></li>
+        <li><span class="recap-num">04</span><strong>Control</strong><span>A person in the loop corrects the decoder's mistakes, scored in bits per second.</span></li>
+      </ol>
+
+      <div class="problems">
+        <article class="problem">
+          <h2>Signals drift</h2>
+          <p>You saw it in Stage 3: by day 30, a decoder fitted on day 0 explains much less of the movement. Clinical systems recalibrate often, or keep adapting quietly while the person uses them.</p>
+        </article>
+        <article class="problem">
+          <h2>Power and heat</h2>
+          <p>The whole implant, radio included, has to run on under 10 milliwatts so it doesn't warm the brain. Every algorithm on the chip must be simple and efficient, which is why compression and spike detection matter so much.</p>
+        </article>
+        <article class="problem">
+          <h2>Electrodes age</h2>
+          <p>The body treats electrodes as foreign objects. Scar tissue can build up around them and weaken the signals over months to years. Thin, flexible threads are one attempt to reduce this.</p>
+        </article>
+        <article class="problem">
+          <h2>Beyond the cursor</h2>
+          <p>The same pipeline with different decoders has been used in research to decode attempted handwriting and speech, aiming to restore communication for people who can't speak.</p>
+        </article>
+      </div>
+
+      <div class="plain plain-closing">
+        <p class="plain-label">Questions to leave with</p>
+        <p>If you could only send 1% of the data, which 1% would you keep? Should the decoder adapt to the brain, or should the brain learn the decoder? Who should own the data an implant records?</p>
+      </div>
+
+      <p class="source">References: Georgopoulos et al. (1982, 1986), cosine tuning and the population vector · Wu et al. (2003), Kalman filter decoding · Quiroga et al. (2004), spike detection and sorting · Nuyujukian et al. (2015), achieved bitrate · Trautmann et al. (2019), decoding without spike sorting · <a href="https://content.neuralink.com/compression-challenge/README.html" target="_blank" rel="noopener">Neuralink Compression Challenge</a> · <a href="https://neuralink.com/webgrid" target="_blank" rel="noopener">Neuralink Webgrid</a>.</p>
+    </section>
+
+  </main>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
