@@ -2,7 +2,7 @@
 
 An interactive, in-browser lesson on the signal processing behind brain–computer interfaces (BCIs): from raw electrode voltage to a decoded cursor. Built for a 40-minute class lesson (BIOE 538).
 
-**[Live demo →](https://YOUR-USERNAME.github.io/spikes-to-cursor/)**
+**[Live demo →](https://westondeatley.github.io/spikes-to-cursor/)**
 
 ![Decoding a cursor from 96 simulated motor-cortex neurons](docs/demo.gif)
 
